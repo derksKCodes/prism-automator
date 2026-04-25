@@ -9,7 +9,7 @@
     "setup": "install-deps.bat",
     "start": "tsc && node ./dist/index.js",
     "dev": "tsx src/index.ts",
-    "zip2derrick": "git add . && git commit -m \"Initial commit\" && git archive --format=zip --prefix=clipmodel/ HEAD -o icecowcold.zip && echo Success: All current changes saved to clipmodel.zip!"
+    "zip2master": "git add . && git commit -m \"Initial commit\" && git archive --format=zip --prefix=prism/ HEAD -o prism.zip && echo Success: All current changes saved to clipmodel.zip!"
   },
   "keywords": [],
   "author": "cypher",
