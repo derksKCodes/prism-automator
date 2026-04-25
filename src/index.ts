@@ -9,13 +9,15 @@ import path from "path";
 const LOG_FILE_PATH = path.join(process.cwd(), "task_logs.txt");
 const CSV_FILE_PATH = path.join(process.cwd(), "tasks.csv");
 
-// --- TRACKING ---
+// =========================
+// STATE
+// =========================
 let totalTasks = 0;
-let totalSessionTime = 0; // seconds
-// ----------------
+let totalSessionTime = 0;
+let previousImageSrc: string | null = null;
 
 // =========================
-// TXT LOGGING
+// LOGGING
 // =========================
 function saveToLogFile(message: string) {
   const timestamp = new Date().toLocaleString();
@@ -23,176 +25,136 @@ function saveToLogFile(message: string) {
 }
 
 // =========================
-// INIT CSV
-// =========================
-function initializeCSV() {
-  const header =
-    "Timestamp,TaskNumber,TaskTimeSeconds,TotalTasks,TotalTimeSeconds,FormattedTotalTime,AvgTaskTime,TasksPerHour\n";
-
-  if (!fs.existsSync(CSV_FILE_PATH)) {
-    fs.writeFileSync(CSV_FILE_PATH, header);
-    return;
-  }
-
-  const content = fs.readFileSync(CSV_FILE_PATH, "utf-8");
-  if (!content.startsWith("Timestamp")) {
-    fs.writeFileSync(CSV_FILE_PATH, header + content);
-  }
-}
-
-// =========================
-// LOAD LAST SESSION
-// =========================
-function loadPreviousTotals() {
-  if (!fs.existsSync(CSV_FILE_PATH)) return;
-
-  const lines = fs.readFileSync(CSV_FILE_PATH, "utf-8").trim().split("\n");
-  if (lines.length <= 1) return;
-
-  const lastRow = lines[lines.length - 1].split(",");
-
-  totalTasks = parseInt(lastRow[3]) || 0;
-  totalSessionTime = parseFloat(lastRow[4]) || 0;
-
-  log(`🔁 Resuming → Tasks: ${totalTasks}, Time: ${totalSessionTime}s`);
-}
-
-// =========================
-// SAVE CSV
-// =========================
-function saveToCSV(
-  taskNumber: number,
-  taskTime: number,
-  totalTasks: number,
-  totalTime: number
-) {
-  const timestamp = new Date().toLocaleString();
-
-  const avgTaskTime = totalTime / totalTasks;
-  const tasksPerHour = 3600 / avgTaskTime;
-
-  const minutes = Math.floor(totalTime / 60);
-  const seconds = (totalTime % 60).toFixed(1);
-  const formattedTotalTime = `${minutes}m ${seconds}s`;
-
-  const row = `${timestamp},${taskNumber},${taskTime},${totalTasks},${totalTime},${formattedTotalTime},${avgTaskTime.toFixed(
-    2
-  )},${tasksPerHour.toFixed(2)}\n`;
-
-  fs.appendFileSync(CSV_FILE_PATH, row);
-}
-
-// =========================
 // MAIN
 // =========================
 async function main() {
-  initializeCSV();
-  loadPreviousTotals();
-
   await BrowserMan.startBrowser();
   const browser = await BrowserMan.connect();
+
   const bm = new BrowserMan(browser);
   await bm.init();
 
   const cc = new ChatController(bm.getPage("chat"));
   const sc = new SiteController(bm.getPage("site"));
+
   await sc.init();
 
-  log("🚀 Prism Labeller Assistant (Human-in-the-Loop Mode)");
+  log("🚀 SYSTEM STARTED");
 
   while (true) {
     try {
       await sc.bringToFront();
 
-      // 1. Enter task view if we aren't already
-      const inTask = await sc.isInTask();
+      // ==================================================
+      // STEP 1: ENSURE TASK EXISTS
+      // ==================================================
+      let inTask = await sc.isInTask();
+
       if (!inTask) {
+        log("📦 No task → clicking Get New Task");
+
         await sc.clickGetNewTask();
-        await Utils.sleep(2000); // Wait for transition
+
+        await sc.page.waitForSelector('img[alt="Input"]', {
+          visible: true,
+          timeout: 60000,
+        });
       }
 
-      const taskStartTime = Date.now(); // Start timer for the task
-      log(`--- Assisting Task #${totalTasks + 1} ---`);
+      // ==================================================
+      // STEP 2: WAIT FOR ACTUAL NEW TASK (CRITICAL FIX)
+      // ==================================================
+      await sc.waitForNewTaskImage(previousImageSrc);
 
-      // 2. Capture task and read available tools
+      await Utils.sleep(500); // small buffer for DOM stability
+
+      // update reference AFTER confirmed new task
+      previousImageSrc = await sc.getInputImageSrc();
+
+      const taskStartTime = Date.now();
+
+      log(`🆕 Task #${totalTasks + 1} READY`);
+
+      // ==================================================
+      // STEP 3: CAPTURE TASK (SAFE NOW)
+      // ==================================================
       const promptContext = await sc.captureTask();
 
-      // 3. Switch to Gemini and ask for Table
+      // ==================================================
+      // STEP 4: AI PROCESSING
+      // ==================================================
       await cc.bringToFront();
+
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120000); // 2min timeout
+      const timeout = setTimeout(() => controller.abort(), 120000);
 
       let aiResponseText = "";
+
       try {
-        aiResponseText = await cc.askForEvaluation(promptContext, controller.signal);
+        aiResponseText = await cc.askForEvaluation(
+          promptContext,
+          controller.signal
+        );
       } finally {
         clearTimeout(timeout);
       }
 
-      log("\n🤖 --- GEMINI RESPONSE ---");
-      console.log(aiResponseText);
-      log("-------------------------\n");
+      log("🤖 AI DONE");
 
-      // 4. Switch back to Prism tool so the user can do the manual work
+      // ==================================================
+      // STEP 5: BACK TO UI
+      // ==================================================
       await sc.bringToFront();
-      log("⏳ Awaiting human labeling... Work in the browser, then click 'Done' or 'Done & Next Task'.");
+      log("⏳ Waiting for user action...");
 
-      // 5. Freeze automation and wait for Human click
-      const userAction = await sc.waitForUserAction();
+      const action = await sc.waitForUserAction();
 
-      // 6. Calculate time and update tracking
-      const durationSeconds = parseFloat(((Date.now() - taskStartTime) / 1000).toFixed(1));
+      // ==================================================
+      // STEP 6: STATS
+      // ==================================================
+      const duration = parseFloat(
+        ((Date.now() - taskStartTime) / 1000).toFixed(1)
+      );
+
       totalTasks++;
-      totalSessionTime += durationSeconds;
+      totalSessionTime += duration;
 
-      const avgTaskTime = totalSessionTime / totalTasks;
-      const tasksPerHour = 3600 / avgTaskTime;
-      const minutes = Math.floor(totalSessionTime / 60);
-      const seconds = (totalSessionTime % 60).toFixed(1);
+      log(`✅ Task ${totalTasks} completed in ${duration}s`);
 
-      const statusMsg =
-        `✅ Task #${totalTasks} | ` +
-        `Time: ${durationSeconds}s | ` +
-        `Total: ${minutes}m ${seconds}s | ` +
-        `Avg: ${avgTaskTime.toFixed(1)}s | ` +
-        `Speed: ${tasksPerHour.toFixed(1)} tasks/hr`;
+      // ==================================================
+      // STEP 7: FLOW CONTROL (FIXED)
+      // ==================================================
+      if (action === "DONE") {
+        log("🛑 STOP REQUESTED");
+        break;
+      }
 
-      log(statusMsg);
-      saveToLogFile(statusMsg);
-      saveToCSV(totalTasks, durationSeconds, totalTasks, totalSessionTime);
-
-      // 7. Handle routing based on User click
-      if (userAction === "DONE") {
-        log(`✅ User clicked 'Done'. Session complete. Total assisted tasks: ${totalTasks}`);
-        break; // Exits the loop and stops the script
-      } else {
-        log(`➡️ User clicked 'Done & Next Task'. Loading next task...`);
-        await Utils.sleep(3000); // Give the site time to load the next task before looping
+      if (action === "NEXT") {
+        log("➡️ NEXT TASK → waiting for UI update");
+        // No click needed; user manual click triggers the site transition
+        await Utils.sleep(2000);
+        continue;
       }
 
     } catch (err: any) {
-      const errorMsg = `⚠️ Task Error: ${err.message}`;
-      log(errorMsg);
-      saveToLogFile(errorMsg);
+      log(`⚠️ ERROR: ${err.message}`);
+
       await Utils.sleep(3000);
-      
-      // Attempt to recover by returning to Dashboard
+
       try {
-        await sc.bringToFront();
-        await sc.page.goto(CONFIG.URLS.site, { waitUntil: "networkidle2" });
-      } catch {
-        // Ignore fallback errors
-      }
+        await sc.page.goto(CONFIG.URLS.site, {
+          waitUntil: "networkidle2",
+        });
+
+        previousImageSrc = null; // reset state after reload
+      } catch {}
     }
   }
 
-  log("Script gracefully exited.");
+  log("SCRIPT STOPPED");
   process.exit(0);
 }
 
-// =========================
-// START
-// =========================
 main().catch((e) => {
-  saveToLogFile(`FATAL SCRIPT ERROR: ${e.message}`);
+  saveToLogFile(`FATAL: ${e.message}`);
 });
