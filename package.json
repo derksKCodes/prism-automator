@@ -1,0 +1,35 @@
+{
+  "name": "prism",
+  "version": "1.0.0",
+  "description": "Dual browser automation",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "setup": "install-deps.bat",
+    "start": "tsc && node ./dist/index.js",
+    "dev": "tsx src/index.ts",
+    "zip2derrick": "git add . && git commit -m \"Initial commit\" && git archive --format=zip --prefix=clipmodel/ HEAD -o icecowcold.zip && echo Success: All current changes saved to clipmodel.zip!"
+  },
+  "keywords": [],
+  "author": "cypher",
+  "license": "GPL-2.0-only",
+  "dependencies": {
+    "playwright": "^1.58.2",
+    "puppeteer-core": "^24.42.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/derksKCodes/prism-automator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/derksKCodes/prism-automator/issues"
+  },
+  "homepage": "https://github.com/derksKCodes/prism-automator#readme",
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}
