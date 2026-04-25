@@ -5,6 +5,7 @@
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {
+    "build": "tsc",
     "setup": "install-deps.bat",
     "start": "tsc && node ./dist/index.js",
     "dev": "tsx src/index.ts",
@@ -15,6 +16,7 @@
   "license": "GPL-2.0-only",
   "dependencies": {
     "playwright": "^1.58.2",
+    "puppeteer": "^24.42.0",
     "puppeteer-core": "^24.42.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
