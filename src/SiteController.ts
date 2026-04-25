@@ -22,68 +22,93 @@ export class SiteController {
   }
 
   async clickGetNewTask() {
-    log("Looking for 'Get New Task' button...");
-    await this.page.waitForFunction(() => {
-      const btns = Array.from(document.querySelectorAll('button'));
-      return btns.find(b => b.innerText.includes('Get New Task'));
-    }, { timeout: 30000 });
+    log("Clicking 'Get New Task'...");
 
     await this.page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('button'));
-      const startBtn = btns.find(b => b.innerText.includes('Get New Task'));
-      startBtn?.click();
+      const btns = Array.from(document.querySelectorAll("button"));
+      const btn = btns.find(b => b.innerText.includes("Get New Task"));
+      btn?.click();
+    });
+  }
+
+  // Updated to ensure fresh task detection
+  async waitForNewTaskImage(previousSrc: string | null) {
+    log("Waiting for NEW task image...");
+
+    await this.page.waitForFunction(
+      (oldSrc) => {
+        const img = document.querySelector('img[alt="Input"]') as HTMLImageElement;
+        // Verify image exists and has a new source URL
+        if (!img || !img.src || img.src.includes('placeholder')) return false;
+        return oldSrc ? img.src !== oldSrc : true;
+      },
+      { timeout: 60000 },
+      previousSrc
+    );
+
+    // Final verification that the image is fully rendered
+    await this.page.waitForFunction(() => {
+      const img = document.querySelector('img[alt="Input"]') as HTMLImageElement;
+      return img && img.complete && img.naturalHeight > 0;
     });
   }
 
   async captureTask(): Promise<string> {
-    log("Waiting for Input and Output images to load...");
-    await this.page.waitForSelector('img[alt="Input"]', { visible: true, timeout: 50000 });
-    await this.page.waitForSelector('img[alt="Output"]', { visible: true, timeout: 50000 });
-    
+    log("Capturing current task...");
+
+    await this.page.waitForSelector('img[alt="Input"]', { visible: true, timeout: 60000 });
+    await this.page.waitForSelector('img[alt="Output"]', { visible: true, timeout: 60000 });
+
     await this.page.waitForFunction(() => {
-      const imgs = Array.from(document.querySelectorAll('img'));
+      const imgs = Array.from(document.querySelectorAll("img"));
       return imgs.every(i => i.complete && i.naturalHeight > 0);
-    }, { timeout: 40000 });
+    });
 
     await this.page.screenshot({ path: CONFIG.TEMP_IMAGE_PATH });
 
-    // Extract tools available on screen (e.g., Select, Box, Pin)
     const availableTools = await this.page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('button'));
-      return btns.map(b => b.innerText.trim()).filter(text => text.includes('(')).join(", ");
+      const btns = Array.from(document.querySelectorAll("button"));
+      return btns
+        .map(b => b.innerText.trim())
+        .filter(t => t.includes("("))
+        .join(", ");
     });
 
     return `Available UI Tools: ${availableTools}`;
   }
 
-  /**
-   * Pauses automation until the human clicks "Done" or "Done & Next Task".
-   * Injects event listeners safely into the DOM.
-   */
+  async getInputImageSrc(): Promise<string | null> {
+    return await this.page.evaluate(() => {
+      const img = document.querySelector('img[alt="Input"]') as HTMLImageElement;
+      return img?.src || null;
+    });
+  }
+
   async waitForUserAction(): Promise<"DONE" | "NEXT"> {
     return await this.page.evaluate(() => {
       return new Promise<"DONE" | "NEXT">((resolve) => {
-        const checkInterval = setInterval(() => {
-          const btns = Array.from(document.querySelectorAll('button'));
-          const doneBtn = btns.find(b => b.innerText.trim() === 'Done');
-          const nextBtn = btns.find(b => b.innerText.trim() === 'Done & Next Task');
+        const interval = setInterval(() => {
+          const btns = Array.from(document.querySelectorAll("button"));
+
+          const doneBtn = btns.find(b => b.innerText.trim() === "Done");
+          const nextBtn = btns.find(b => b.innerText.trim() === "Done & Next Task");
 
           if (doneBtn && !doneBtn.dataset.listenerApplied) {
             doneBtn.dataset.listenerApplied = "true";
-            doneBtn.addEventListener('click', () => { 
-              clearInterval(checkInterval); 
-              resolve("DONE"); 
+            doneBtn.addEventListener("click", () => {
+              clearInterval(interval);
+              resolve("DONE");
             });
           }
 
           if (nextBtn && !nextBtn.dataset.listenerApplied) {
             nextBtn.dataset.listenerApplied = "true";
-            nextBtn.addEventListener('click', () => { 
-              clearInterval(checkInterval); 
-              resolve("NEXT"); 
+            nextBtn.addEventListener("click", () => {
+              clearInterval(interval);
+              resolve("NEXT");
             });
           }
-        }, 1000);
+        }, 500);
       });
     });
   }
