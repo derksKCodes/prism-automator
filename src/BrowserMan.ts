@@ -104,7 +104,8 @@ export default class BrowserMan {
     log(`Connecting to Chrome on port ${CONFIG.PORT}...`);
     return await puppeteer.connect({ 
       browserURL: `http://127.0.0.1:${CONFIG.PORT}`, 
-      defaultViewport: null 
+      defaultViewport: null ,
+      protocolTimeout: 0 // infinite timeout to prevent "Protocol error (Target.setDiscoverTargets): Target closed" on slow startups
     });
   }
 }
