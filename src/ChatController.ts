@@ -39,17 +39,17 @@ export default class ChatController {
     const fullMessage = `${CONFIG.PROMPT}\n\n**UI Context:**\n${promptContext}`;
     
     await this.cancelPreviousUploads(signal);
-    await Utils.sleep(300);
+    await Utils.sleep(1000);
 
     // Upload File
     await this.page.click('button[aria-controls="upload-file-menu"]');
-    await Utils.sleep(400);
+    await Utils.sleep(1000);
     const fileChooserPromise = this.page.waitForFileChooser();
     await this.page.click('button[data-test-id="local-images-files-uploader-button"]');
     
     const fileChooser = await abortable(fileChooserPromise, signal);
     await fileChooser.accept([CONFIG.TEMP_IMAGE_PATH]);
-    await Utils.sleep(400);
+    await Utils.sleep(2000);
 
     // Wait for image upload processing
     const sendBtnSelector = 'button.send-button.submit[aria-disabled="false"]';
@@ -75,25 +75,37 @@ export default class ChatController {
     return await this._waitForTableResponse(signal);
   }
 
-  private async _waitForTableResponse(signal?: AbortSignal): Promise<string> {
-    // Wait for the new response to appear
+ private async _waitForTableResponse(signal?: AbortSignal): Promise<string> {
+    // 1. Wait for the new response container to appear
     const newResponse = await abortable(
       this.page.waitForSelector('model-response:not([data-old="true"])', { timeout: 60000 }), signal
     );
     
     if (!newResponse) throw new Error("New model-response did not appear!");
 
-    // Wait until Gemini stops generating (the send button re-appears/stops spinning)
+    log("Gemini started responding. Waiting for table to finalize...");
+
+    // 2. NEW LOGIC: Wait until the text inside the response contains a Markdown table header
+    // This ensures we don't grab the text while it is still saying "Searching..." or "Thinking..."
     await abortable(
-      this.page.waitForFunction(() => {
-        const btn = document.querySelector('button.send-button');
-        return btn && !btn.hasAttribute('disabled') && !document.querySelector('.generating-indicator');
-      }, { polling: 1000, timeout: 120000 }), signal
+      this.page.waitForFunction((res) => {
+        const text = (res as HTMLElement).innerText || "";
+        // // Check if the response contains the common Markdown table separator
+        // const hasTable = text.includes("|---|") || (text.includes("|") && text.split("\n").length > 3);
+        
+        // Also ensure the stop button/spinning indicator is gone
+        const isDoneGenerating = !document.querySelector('.generating-indicator') && 
+                                 !document.querySelector('button[aria-label="Stop response"]');
+        
+        return isDoneGenerating;
+      }, { polling: 2000, timeout: 120000 }, newResponse), 
+      signal
     );
 
-    await Utils.sleep(1000);
+    // 3. Small safety buffer to let any final formatting (bolding, etc.) finish
+    await Utils.sleep(2000);
 
-    // Extract text containing the table
+    // 4. Extract final text
     const resultText = await this.page.evaluate((res) => {
       return (res as HTMLElement).innerText || "";
     }, newResponse);
