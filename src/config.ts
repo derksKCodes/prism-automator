@@ -34,7 +34,8 @@ Select the tool that best fits the transformation type:
 - Start every instruction with an action verb: Add, Remove, Change, Replace, or Apply.
 - Be specific and avoid vague language (e.g., use "Change subject to face forward and smile" instead of "Make face better").
 - Grouping Rule: If the same change is repeated (e.g., removing five trees), group the annotations and write one shared sentence (e.g., "Remove all the trees"). Only group similar changes.
-
+ - Do not group different types of changes together (e.g., "Remove all the trees and change the sky to sunset" is incorrect).
+  - Use wwords like man, woman, girl, boy, person, etc. to refer to the subject when the subject is a human. Avoid using "subject" or characters in the instruction.
 ### Skip Criteria:
 Flag the task as "skipped" if:
 - Images contain NSFW content (nudity, violence, etc.).
